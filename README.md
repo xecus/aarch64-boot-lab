@@ -25,6 +25,7 @@ QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れ�
 ├── debug-<版>.gdb        run-direct-debug-<版>.sh 用の gdb スクリプト
 ├── dump-dtb.sh           QEMU virt のデバイスツリーを virt.dtb / virt.dts に書き出す
 ├── virt.dts              ↑ の出力（読む用）
+├── configs/              各カーネルの .config（linux-<版>.config）
 ├── boot/
 │   ├── boot.cmd          U-Boot ブートスクリプト（initramfs 版）
 │   ├── boot-rootdisk.cmd U-Boot ブートスクリプト（/dev/vda2 をルートにする版）
@@ -74,6 +75,15 @@ export CROSS_COMPILE="aarch64-linux-gnu-"
 make defconfig
 make -j `getconf _NPROCESSORS_ONLN` Image dtbs modules
 ```
+
+`make defconfig` を実行してできた `.config` を `configs/linux-<版>.config` に保存している。同じ設定でビルドし直すときは、`make defconfig` の代わりに次を実行する。
+
+```sh
+cp ../configs/linux-7.2.7.config .config
+make olddefconfig
+```
+
+設定を変えたら、`.config` を `configs/` にコピーし直してコミットする。
 
 使うファイル:
 - `linux-<版>/arch/arm64/boot/Image`: QEMU / U-Boot に渡すカーネル
