@@ -13,7 +13,7 @@ UBOOT=./u-boot/u-boot.bin
 
 # デバッグ版とリリース版の両方を作る。出力先は tf-a/build/qemu/{debug,release}/
 # DEBUG=1: 起動ログ（INFO）が詳しく出る。cortex-a53 / cortex-a72 で使う
-# DEBUG=0: ログは NOTICE のみ。cortex-a55 / a76 / a710 で使う（理由は run-tfa-uboot-rootdisk-*.sh）
+# DEBUG=0: ログは NOTICE のみ。cortex-a55 / a76 / a710 で使う（理由は run.sh の tfa-uboot-rootdisk）
 for DEBUG in 1 0; do
     make -C tf-a CROSS_COMPILE=aarch64-linux-gnu- PLAT=qemu DEBUG=$DEBUG \
         BL33=$(realpath $UBOOT) all fip -j$(nproc)
