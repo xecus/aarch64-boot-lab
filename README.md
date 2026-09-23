@@ -20,12 +20,12 @@ QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れ�
 
 ```
 .
-├── run-*.sh              起動スクリプト（起動方法 × カーネル版）。第1引数で CPU を選ぶ
-├── select-cpu.sh         run-*.sh / dump-dtb.sh が読み込む CPU の選択と一覧
+├── run.sh                起動スクリプト（起動方法・カーネル版・CPU・CPU 数を引数で選ぶ）
+├── select-cpu.sh         run.sh / dump-dtb.sh が読み込む CPU の選択と一覧
 ├── make-bootdisk.sh      bootdisk-<版>.img を作る（U-Boot + initramfs 用）
 ├── make-rootdisk.sh      rootdisk-<版>.img を作る（U-Boot + ディスク上の rootfs 用）
 ├── make-tfa.sh           TF-A をビルドし、U-Boot と連結した qemu_fw.bios を作る
-├── debug-<版>.gdb        run-direct-debug-<版>.sh 用の gdb スクリプト
+├── debug-<版>.gdb        ./run.sh direct-debug <版> 用の gdb スクリプト
 ├── dump-dtb.sh           QEMU virt のデバイスツリーを virt.dtb / virt.dts に書き出す
 ├── virt.dts              ↑ の出力（読む用）
 ├── configs/              .config（linux-<版> / u-boot-v2024.01 / busybox-1.32）
@@ -183,35 +183,52 @@ root 権限は不要（`mkfs.ext4 -d` でディレクトリの中身を直接書
 
 ## 起動方法
 
-どのスクリプトも `<版>` は `5.4` / `6.18` / `7.2`。
+```sh
+./run.sh [オプション] <起動方法> <版>
+```
 
-| スクリプト | 流れ | ルートファイルシステム |
+`<版>` は `5.4` / `6.18` / `7.2`。オプションは起動方法・版の前後どちらに書いてもよい。`./run.sh -h` で一覧を表示する。
+
+| 起動方法 | 流れ | ルートファイルシステム |
 |---|---|---|
-| `run-direct-<版>.sh` | QEMU → カーネル | initramfs（`rootfs.img`） |
-| `run-uboot-qfw-<版>.sh` | QEMU → U-Boot → fw_cfg 経由でカーネル | initramfs |
-| `run-uboot-initrd-disk-<版>.sh` | QEMU → U-Boot → `bootdisk` の `boot.scr` → カーネル | initramfs（ディスクから読み込む） |
-| `run-uboot-rootdisk-<版>.sh` | QEMU → U-Boot → `rootdisk` p1 の `boot.scr` → カーネル | `/dev/vda2`（ext4）、busybox init |
-| `run-tfa-uboot-rootdisk-<版>.sh` | QEMU → TF-A（BL1 → BL2 → BL31）→ U-Boot → `rootdisk` の `boot.scr` → カーネル | `/dev/vda2`（ext4）、busybox init |
-| `run-direct-debug-<版>.sh` | `run-direct` と同じ。CPU を止めて gdb を待つ | initramfs |
+| `direct` | QEMU → カーネル | initramfs（`rootfs.img`） |
+| `uboot-qfw` | QEMU → U-Boot → fw_cfg 経由でカーネル | initramfs |
+| `uboot-initrd-disk` | QEMU → U-Boot → `bootdisk` の `boot.scr` → カーネル | initramfs（ディスクから読み込む） |
+| `uboot-rootdisk` | QEMU → U-Boot → `rootdisk` p1 の `boot.scr` → カーネル | `/dev/vda2`（ext4）、busybox init |
+| `tfa-uboot-rootdisk` | QEMU → TF-A（BL1 → BL2 → BL31）→ U-Boot → `rootdisk` の `boot.scr` → カーネル | `/dev/vda2`（ext4）、busybox init |
+| `direct-debug` | `direct` と同じ。CPU を止めて gdb を待つ | initramfs |
 
-- 終了: ゲストのシェルで `poweroff`（QEMU ごと止めるなら `Ctrl-a x`）
-- rootdisk 版はシェルを `exit` しても立ち上がり直す（inittab の `respawn`）
+| オプション | 意味 |
+|---|---|
+| `-c`, `--cpu CPU` | QEMU の `-cpu`（[CPU を選ぶ](#cpu-を選ぶ)）。省略すると `cortex-a53` |
+| `-s`, `--smp N` | CPU の数（[CPU の数を増やす](#cpu-の数を増やす)）。1〜8、省略すると 1 |
+
+```sh
+./run.sh direct 7.2
+./run.sh uboot-rootdisk 5.4 --cpu a72
+./run.sh tfa-uboot-rootdisk 6.18 -c a76 -s 4
+```
+
+- 終了
+  - initramfs 版（`direct` / `uboot-qfw` / `uboot-initrd-disk`）: シェルで `exit`。`/init` の最後の `poweroff -f` で止まる。`poweroff` は効かない（PID 1 が busybox init ではなく `/init` スクリプトのため）
+  - rootdisk 版: シェルで `poweroff`。`exit` してもシェルが立ち上がり直す（inittab の `respawn`）
+  - どれでも、QEMU ごと止めるなら `Ctrl-a x`
 - TF-A 版の違い
   - `-M virt,secure=on,virtualization=on` で EL3 と EL2 を有効にする。U-Boot と Linux は EL2 で動く（ほかの起動方法は EL1。dmesg の `CPU: All CPU(s) started at EL2` で分かる）
   - PSCI（CPU の起動・`poweroff` など）には QEMU ではなく TF-A の BL31 が応える。`poweroff` すると BL31 が `PSCI Power Domain Map` を表示してから止まる
   - `-m 1024` が必要。BL2 が U-Boot を `0x60000000` に置くため、既定の 128MB では足りない
   - 起動時の `cortex_a53: CPU workaround for erratum ... was missing!` は、実機向けの CPU の不具合対策を有効にしていないという警告。QEMU では影響しない
   - cortex-a55 / a76 / a710 ではリリース版の TF-A を使うので、BL1・BL2・BL31 のログは `NOTICE` だけになる（[CPU を選ぶ](#cpu-を選ぶ) を参照）
-- disk 系のスクリプトには `-kernel` / `-initrd` を渡していない。渡すと U-Boot は fw_cfg 経由の起動を先に選ぶため
+- disk 系の起動方法では `-kernel` / `-initrd` を渡していない。渡すと U-Boot は fw_cfg 経由の起動を先に選ぶため
 
 ### CPU を選ぶ
 
-どのスクリプトも第1引数で QEMU の `-cpu` を選べる。省略すると `cortex-a53`。`cortex-` は省いてもよい。
+`--cpu` で QEMU の `-cpu` を選ぶ。省略すると `cortex-a53`。`cortex-` は省いてもよい。
 
 ```sh
-./run-direct-7.2.sh            # cortex-a53
-./run-direct-7.2.sh a76        # cortex-a76
-./run-tfa-uboot-rootdisk-5.4.sh cortex-a710
+./run.sh direct 7.2                        # cortex-a53
+./run.sh direct 7.2 --cpu a76              # cortex-a76
+./run.sh tfa-uboot-rootdisk 5.4 -c cortex-a710
 ```
 
 | CPU | アーキ | 種類 | 主な搭載例 |
@@ -227,18 +244,38 @@ root 権限は不要（`mkfs.ext4 -d` でディレクトリの中身を直接書
 - a710 は ARMv9 で、SVE・PAC・BTI などを持つ。7.2 は BTI（`Branch Target Identification`）を検出するが、5.4 は対応前なので検出しない。検出される機能の数も 5.4 と 7.2 で大きく違う
 - TF-A 版では a53 / a72 はデバッグ版、a55 / a76 / a710 はリリース版の TF-A を使う。a55 / a76 / a710（DynamIQ 世代）では、デバッグ版が起動時のエラッタ表示で DSU のレジスタ `CLUSTERIDR_EL1` を読む。QEMU はこれを実装していないので、BL1 が未定義命令例外で止まる。エラッタ表示は `DEBUG=1` と連動していて単独では切れない
 
+### CPU の数を増やす
+
+`--smp` で CPU の数（QEMU の `-smp`）を 1〜8 で選ぶ。省略すると 1。
+
+```sh
+./run.sh direct 7.2 --smp 4
+./run.sh tfa-uboot-rootdisk 7.2 --smp 4
+```
+
+- CPU0 だけがカーネルを最初から実行し、残りの CPU は Linux が PSCI の `CPU_ON` で起こす。dmesg では次のように見える
+  ```
+  smp: Bringing up secondary CPUs ...
+  CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+  ...
+  smp: Brought up 1 node, 4 CPUs
+  ```
+- `CPU_ON` に応えるのは、TF-A 版では BL31、それ以外では QEMU。TF-A 版で `poweroff` すると、`PSCI Power Domain Map` で起こした CPU（`MPID 0x0`〜`0x3`）が `State ON` になっているのが分かる
+- 上限を 8 にしているのは、virt の割り込みコントローラー GICv2 が 8 CPU までしか扱えないため。9 以上だと QEMU は GICv3 に切り替えてしまい、GICv2 前提でビルドした TF-A と合わなくなる
+- gdb では CPU がスレッドとして見える（`info threads`）。`secondary_start_kernel` にブレークポイントを置くと、2 つ目以降の CPU が起きたところで止まる
+
 ### ログ
 
-各スクリプトは実行のたびに次のファイルを上書きする。CPU ごとに別のファイルになるので、並べて比べられる。
+実行のたびに次のファイルを上書きする。CPU ごと（`--smp` が 2 以上なら CPU 数ごと）に別のファイルになるので、並べて比べられる。
 
-- `logs/boot-<起動方法>-<版>-<CPU>.log`: コンソール出力
-- `logs/qemu/qemu-<起動方法>-<版>-<CPU>.log`: QEMU の `-d guest_errors` の出力
+- `logs/boot-<起動方法>-<版>-<CPU>[-smp<N>].log`: コンソール出力
+- `logs/qemu/qemu-<起動方法>-<版>-<CPU>[-smp<N>].log`: QEMU の `-d guest_errors` の出力
 
 ## gdb でカーネルを追う
 
 ```sh
 # 端末 1
-./run-direct-debug-7.2.sh
+./run.sh direct-debug 7.2
 
 # 端末 2
 gdb-multiarch -x debug-7.2.gdb
