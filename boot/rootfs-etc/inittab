@@ -1,0 +1,8 @@
+# busybox init の設定（/etc/inittab）
+# 書式: <tty>::<動作>:<コマンド>
+::sysinit:/etc/init.d/rcS
+# シリアルコンソールでシェルを起動。tty を指定するのでジョブ制御も効く。
+# シェルを exit しても respawn で立ち上がり直す。終了するときは poweroff。
+ttyAMA0::respawn:-/bin/sh
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r

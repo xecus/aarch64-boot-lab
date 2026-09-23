@@ -1,0 +1,20 @@
+# ログ（run-*.sh が出力）
+logs/
+*.log
+
+# 外部ソース（tarball とその展開先、別リポジトリ）
+*.tar.xz
+linux-*/
+busybox/
+u-boot/
+
+# 生成物: ディスクイメージ（make-bootdisk.sh / make-rootdisk.sh）
+*.img
+boot/stage-*/
+boot/*.scr
+
+# 生成物: デバイスツリーのバイナリ（dump-dtb.sh）。読める形の virt.dts は残す
+*.dtb
+
+# gdb
+.gdb_history

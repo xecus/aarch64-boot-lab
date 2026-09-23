@@ -1,0 +1,6 @@
+#!/bin/sh
+# 起動時に一度だけ実行される初期化スクリプト（inittab の sysinit）
+mount -t proc none /proc
+mount -t sysfs none /sys
+/sbin/mdev -s
+echo "== rcS: rootfs on $(grep ' / ' /proc/mounts | cut -d' ' -f1) =="
