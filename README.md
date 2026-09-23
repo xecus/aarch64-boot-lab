@@ -3,9 +3,10 @@
 QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れを試す実験環境。
 
 - カーネル: Linux 5.4.83 / 6.18.53 / 7.2.7（すべて `defconfig`）
+- ファームウェア: TF-A v2.15.0（`PLAT=qemu`、EL3）
 - ブートローダー: U-Boot v2024.01（`qemu_arm64_defconfig`）
 - ユーザーランド: BusyBox 1.32（static リンク）
-- 起動方法を 4 通り用意し、gdb でカーネルの入口から `/init` までを追える
+- 起動方法を 5 通り用意し、gdb でカーネルの入口から `/init` までを追える
 
 ## 動作確認した環境
 
@@ -22,6 +23,7 @@ QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れ�
 ├── run-*.sh              起動スクリプト（起動方法 × カーネル版）
 ├── make-bootdisk.sh      bootdisk-<版>.img を作る（U-Boot + initramfs 用）
 ├── make-rootdisk.sh      rootdisk-<版>.img を作る（U-Boot + ディスク上の rootfs 用）
+├── make-tfa.sh           TF-A をビルドし、U-Boot と連結した qemu_fw.bios を作る
 ├── debug-<版>.gdb        run-direct-debug-<版>.sh 用の gdb スクリプト
 ├── dump-dtb.sh           QEMU virt のデバイスツリーを virt.dtb / virt.dts に書き出す
 ├── virt.dts              ↑ の出力（読む用）
@@ -37,6 +39,7 @@ QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れ�
 │  ── 以下はセットアップで用意する（git 管理外）──
 ├── linux-5.4.83/ linux-6.18.53/ linux-7.2.7/
 ├── u-boot/
+├── tf-a/
 └── busybox/
 ```
 
@@ -149,7 +152,23 @@ cd ../..
 
 `busybox/rootfs.img` が initramfs になる。`_install/` を書き換えたら、`find ... | cpio ...` を実行し直す。
 
-### 5. ディスクイメージ（U-Boot のディスク起動を使う場合）
+### 5. TF-A（TF-A 経由の起動を使う場合）
+
+```sh
+git clone --depth 1 --branch v2.15.0 https://review.trustedfirmware.org/TF-A/trusted-firmware-a tf-a
+./make-tfa.sh
+```
+
+`make-tfa.sh` の中身は次のとおり。BL33（EL3 を抜けたあとに動くプログラム）として U-Boot を FIP に入れる。
+
+```sh
+make -C tf-a CROSS_COMPILE=aarch64-linux-gnu- PLAT=qemu DEBUG=1 \
+    BL33=$(realpath u-boot/u-boot.bin) all fip
+```
+
+`tf-a/build/qemu/debug/qemu_fw.bios`（`bl1.bin` の後ろに `fip.bin` を連結したもの）ができ、これを QEMU の `-bios` に渡す。U-Boot を作り直したら `./make-tfa.sh` も実行し直す。
+
+### 6. ディスクイメージ（U-Boot のディスク起動を使う場合）
 
 ```sh
 for v in 5.4 6.18 7.2; do
@@ -170,10 +189,16 @@ root 権限は不要（`mkfs.ext4 -d` でディレクトリの中身を直接書
 | `run-uboot-qfw-<版>.sh` | QEMU → U-Boot → fw_cfg 経由でカーネル | initramfs |
 | `run-uboot-initrd-disk-<版>.sh` | QEMU → U-Boot → `bootdisk` の `boot.scr` → カーネル | initramfs（ディスクから読み込む） |
 | `run-uboot-rootdisk-<版>.sh` | QEMU → U-Boot → `rootdisk` p1 の `boot.scr` → カーネル | `/dev/vda2`（ext4）、busybox init |
+| `run-tfa-uboot-rootdisk-<版>.sh` | QEMU → TF-A（BL1 → BL2 → BL31）→ U-Boot → `rootdisk` の `boot.scr` → カーネル | `/dev/vda2`（ext4）、busybox init |
 | `run-direct-debug-<版>.sh` | `run-direct` と同じ。CPU を止めて gdb を待つ | initramfs |
 
 - 終了: ゲストのシェルで `poweroff`（QEMU ごと止めるなら `Ctrl-a x`）
 - rootdisk 版はシェルを `exit` しても立ち上がり直す（inittab の `respawn`）
+- TF-A 版の違い
+  - `-M virt,secure=on,virtualization=on` で EL3 と EL2 を有効にする。U-Boot と Linux は EL2 で動く（ほかの起動方法は EL1。dmesg の `CPU: All CPU(s) started at EL2` で分かる）
+  - PSCI（CPU の起動・`poweroff` など）には QEMU ではなく TF-A の BL31 が応える。`poweroff` すると BL31 が `PSCI Power Domain Map` を表示してから止まる
+  - `-m 1024` が必要。BL2 が U-Boot を `0x60000000` に置くため、既定の 128MB では足りない
+  - 起動時の `cortex_a53: CPU workaround for erratum ... was missing!` は、実機向けの CPU の不具合対策を有効にしていないという警告。QEMU では影響しない
 - disk 系のスクリプトには `-kernel` / `-initrd` を渡していない。渡すと U-Boot は fw_cfg 経由の起動を先に選ぶため
 
 ### ログ
