@@ -1,0 +1,8 @@
+#!/bin/sh
+mount -t proc none /proc
+mount -t sysfs none /sys
+/sbin/mdev -s
+# setsid: 新しいセッションを作る
+# cttyhack: /dev/console の実体（ttyAMA0）を開き直して制御端末にする → ジョブ制御が効く
+setsid cttyhack /bin/sh
+poweroff -f

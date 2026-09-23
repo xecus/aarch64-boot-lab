@@ -25,10 +25,11 @@ QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れ�
 ├── debug-<版>.gdb        run-direct-debug-<版>.sh 用の gdb スクリプト
 ├── dump-dtb.sh           QEMU virt のデバイスツリーを virt.dtb / virt.dts に書き出す
 ├── virt.dts              ↑ の出力（読む用）
-├── configs/              各カーネルの .config（linux-<版>.config）
+├── configs/              .config（linux-<版> / u-boot-v2024.01 / busybox-1.32）
 ├── boot/
 │   ├── boot.cmd          U-Boot ブートスクリプト（initramfs 版）
 │   ├── boot-rootdisk.cmd U-Boot ブートスクリプト（/dev/vda2 をルートにする版）
+│   ├── initramfs-init    initramfs の /init（busybox/_install/init にコピーする）
 │   └── rootfs-etc/       rootdisk の /etc（inittab, init.d/rcS）
 ├── logs/                 実行ログ（git 管理外）
 │   └── qemu/             QEMU の -D 出力（guest_errors）
@@ -101,6 +102,8 @@ make CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
 cd ..
 ```
 
+できた `.config` は `configs/u-boot-v2024.01.config` に保存している（`qemu_arm64_defconfig` のまま）。
+
 使うファイル:
 - `u-boot/u-boot.bin`: QEMU の `-bios` に渡す
 - `u-boot/tools/mkimage`: `boot/*.cmd` を `boot.scr` に変換する（`make-*.sh` が使う）
@@ -122,6 +125,8 @@ menuconfig で次の 2 つを変える。
 - `Settings` → `Build static binary (no shared libs)` を **有効**（`CONFIG_STATIC=y`）
 - `Networking Utilities` → `tc` を **無効**（新しいカーネルヘッダーではビルドが通らない）
 
+変更後の `.config` は `configs/busybox-1.32.config` に保存している。menuconfig の代わりに `cp ../configs/busybox-1.32.config .config` としてもよい。
+
 ```sh
 make -j$(nproc)
 make install          # _install/ にルートファイルシステムができる
@@ -135,16 +140,7 @@ mkdir -p proc sys dev
 sudo mknod -m 600 dev/console c 5 1
 sudo mknod -m 644 dev/null    c 1 3
 
-cat > init <<'EOF'
-#!/bin/sh
-mount -t proc none /proc
-mount -t sysfs none /sys
-/sbin/mdev -s
-# setsid: 新しいセッションを作る
-# cttyhack: /dev/console の実体（ttyAMA0）を開き直して制御端末にする → ジョブ制御が効く
-setsid cttyhack /bin/sh
-poweroff -f
-EOF
+cp ../../boot/initramfs-init init
 chmod +x init
 
 find . | cpio -o -H newc > ../rootfs.img
