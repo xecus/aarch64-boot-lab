@@ -14,8 +14,9 @@ tf-a/
 boot/stage-*/
 boot/*.scr
 
-# 生成物: デバイスツリーのバイナリ（dump-dtb.sh）。読める形の virt.dts は残す
+# 生成物: デバイスツリー（dump-dtb.sh）。cortex-a53 の読める形の virt.dts だけ残す
 *.dtb
+virt-*.dts
 
 # gdb
 .gdb_history
