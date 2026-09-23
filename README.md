@@ -20,7 +20,8 @@ QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れ�
 
 ```
 .
-├── run-*.sh              起動スクリプト（起動方法 × カーネル版）
+├── run-*.sh              起動スクリプト（起動方法 × カーネル版）。第1引数で CPU を選ぶ
+├── select-cpu.sh         run-*.sh / dump-dtb.sh が読み込む CPU の選択と一覧
 ├── make-bootdisk.sh      bootdisk-<版>.img を作る（U-Boot + initramfs 用）
 ├── make-rootdisk.sh      rootdisk-<版>.img を作る（U-Boot + ディスク上の rootfs 用）
 ├── make-tfa.sh           TF-A をビルドし、U-Boot と連結した qemu_fw.bios を作る
@@ -162,11 +163,12 @@ git clone --depth 1 --branch v2.15.0 https://review.trustedfirmware.org/TF-A/tru
 `make-tfa.sh` の中身は次のとおり。BL33（EL3 を抜けたあとに動くプログラム）として U-Boot を FIP に入れる。
 
 ```sh
+# DEBUG=1（デバッグ版）と DEBUG=0（リリース版）の 2 回ビルドする
 make -C tf-a CROSS_COMPILE=aarch64-linux-gnu- PLAT=qemu DEBUG=1 \
     BL33=$(realpath u-boot/u-boot.bin) all fip
 ```
 
-`tf-a/build/qemu/debug/qemu_fw.bios`（`bl1.bin` の後ろに `fip.bin` を連結したもの）ができ、これを QEMU の `-bios` に渡す。U-Boot を作り直したら `./make-tfa.sh` も実行し直す。
+`tf-a/build/qemu/{debug,release}/qemu_fw.bios`（`bl1.bin` の後ろに `fip.bin` を連結したもの）ができ、これを QEMU の `-bios` に渡す。どちらを使うかは CPU で決まる（[CPU を選ぶ](#cpu-を選ぶ) を参照）。U-Boot を作り直したら `./make-tfa.sh` も実行し直す。
 
 ### 6. ディスクイメージ（U-Boot のディスク起動を使う場合）
 
@@ -199,14 +201,38 @@ root 権限は不要（`mkfs.ext4 -d` でディレクトリの中身を直接書
   - PSCI（CPU の起動・`poweroff` など）には QEMU ではなく TF-A の BL31 が応える。`poweroff` すると BL31 が `PSCI Power Domain Map` を表示してから止まる
   - `-m 1024` が必要。BL2 が U-Boot を `0x60000000` に置くため、既定の 128MB では足りない
   - 起動時の `cortex_a53: CPU workaround for erratum ... was missing!` は、実機向けの CPU の不具合対策を有効にしていないという警告。QEMU では影響しない
+  - cortex-a55 / a76 / a710 ではリリース版の TF-A を使うので、BL1・BL2・BL31 のログは `NOTICE` だけになる（[CPU を選ぶ](#cpu-を選ぶ) を参照）
 - disk 系のスクリプトには `-kernel` / `-initrd` を渡していない。渡すと U-Boot は fw_cfg 経由の起動を先に選ぶため
+
+### CPU を選ぶ
+
+どのスクリプトも第1引数で QEMU の `-cpu` を選べる。省略すると `cortex-a53`。`cortex-` は省いてもよい。
+
+```sh
+./run-direct-7.2.sh            # cortex-a53
+./run-direct-7.2.sh a76        # cortex-a76
+./run-tfa-uboot-rootdisk-5.4.sh cortex-a710
+```
+
+| CPU | アーキ | 種類 | 主な搭載例 |
+|---|---|---|---|
+| `cortex-a53` | ARMv8.0 | 小コア（in-order） | Raspberry Pi 3、多くの組み込み SoC |
+| `cortex-a55` | ARMv8.2 | 小コア（in-order） | RK3588 などの小コア側 |
+| `cortex-a72` | ARMv8.0 | 大コア（out-of-order） | Raspberry Pi 4、RK3399 の大コア側 |
+| `cortex-a76` | ARMv8.2 | 大コア（out-of-order） | RK3588 などの大コア側 |
+| `cortex-a710` | ARMv9.0 | 大コア（out-of-order） | 最近のスマートフォン |
+
+- 縦（a53 → a55、a72 → a76）に比べると世代の差で、カーネルが見つける CPU の機能（`CPU features: detected: ...`）が増える
+- 横（a53 ↔ a72、a55 ↔ a76）に比べるとアーキは同じで、MIDR（`Booting Linux on physical CPU ... [0x410fd034]` の `[]` 内）やエラッタ対策が変わる
+- a710 は ARMv9 で、SVE・PAC・BTI などを持つ。7.2 は BTI（`Branch Target Identification`）を検出するが、5.4 は対応前なので検出しない。検出される機能の数も 5.4 と 7.2 で大きく違う
+- TF-A 版では a53 / a72 はデバッグ版、a55 / a76 / a710 はリリース版の TF-A を使う。a55 / a76 / a710（DynamIQ 世代）では、デバッグ版が起動時のエラッタ表示で DSU のレジスタ `CLUSTERIDR_EL1` を読む。QEMU はこれを実装していないので、BL1 が未定義命令例外で止まる。エラッタ表示は `DEBUG=1` と連動していて単独では切れない
 
 ### ログ
 
-各スクリプトは実行のたびに次のファイルを上書きする。
+各スクリプトは実行のたびに次のファイルを上書きする。CPU ごとに別のファイルになるので、並べて比べられる。
 
-- `logs/boot-<起動方法>-<版>.log`: コンソール出力
-- `logs/qemu/qemu-<起動方法>-<版>.log`: QEMU の `-d guest_errors` の出力
+- `logs/boot-<起動方法>-<版>-<CPU>.log`: コンソール出力
+- `logs/qemu/qemu-<起動方法>-<版>-<CPU>.log`: QEMU の `-d guest_errors` の出力
 
 ## gdb でカーネルを追う
 
@@ -231,6 +257,7 @@ gdb-multiarch -x debug-7.2.gdb
 
 ```sh
 ./dump-dtb.sh     # → virt.dtb / virt.dts
+./dump-dtb.sh a76 # → virt-cortex-a76.dtb / virt-cortex-a76.dts
 ```
 
 QEMU の `virt` マシンが生成するデバイスツリーを書き出す。
