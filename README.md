@@ -203,3 +203,8 @@ gdb-multiarch -x debug-7.2.gdb
 ```
 
 QEMU の `virt` マシンが生成するデバイスツリーを書き出す。
+
+## ライセンス
+
+このリポジトリのスクリプトと設定ファイルは [MIT License](LICENSE)。
+セットアップで取得する Linux・U-Boot・BusyBox は含まれておらず、それぞれのライセンス（GPL-2.0 など）に従う。
