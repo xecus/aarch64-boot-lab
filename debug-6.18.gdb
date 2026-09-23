@@ -1,4 +1,4 @@
-# gdb-multiarch -x debug-6.18.gdb で読み込む（run-direct-debug-6.18.sh 用）
+# gdb-multiarch -x debug-6.18.gdb で読み込む（./run.sh direct-debug 6.18 用）
 file ./linux-6.18.53/vmlinux
 set architecture aarch64
 target remote :1234

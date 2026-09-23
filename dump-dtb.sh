@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# run-direct-5.4.sh と同じ構成（linux-5.4.83）で QEMU が生成するデバイスツリーを取り出し、
+# ./run.sh direct 5.4 と同じ構成（linux-5.4.83）で QEMU が生成するデバイスツリーを取り出し、
 # 読める形（.dts）に変換する。QEMU は dumpdtb 後すぐ終了する。
 # 第1引数で CPU を選ぶ（省略すると cortex-a53。一覧は select-cpu.sh）。
 # cortex-a53 以外では virt-<CPU>.dtb / virt-<CPU>.dts に書き出す。
 . ./select-cpu.sh
+select_cpu "$1" || { echo "使い方: $0 [CPU]" >&2; exit 1; }
 
 if [ "$CPU" = cortex-a53 ]; then
     OUT=virt
