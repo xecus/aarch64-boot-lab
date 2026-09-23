@@ -1,4 +1,4 @@
-# aarch64-qemu-boot-lab
+# aarch64-boot-lab
 
 QEMU の aarch64 `virt` マシン上で、Linux カーネルの起動の流れを試す実験環境。
 
